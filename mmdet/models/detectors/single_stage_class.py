@@ -16,6 +16,7 @@ import numpy as np
 
 from sklearn.decomposition import PCA
 
+
 def pca_vis(tensor, idx=0):
     t = tensor[idx].cpu().numpy()
     c, h, w = t.shape
@@ -34,19 +35,23 @@ class SingleStageClsDetector(BaseDetector):
     output features of the backbone+neck.
     """
 
-    def __init__(self,
-                 backbone,
-                 neck=None,
-                 bbox_head=None,
-                 classifier=None,
-                 train_cfg=None,
-                 test_cfg=None,
-                 pretrained=None,
-                 init_cfg=None):
+    def __init__(
+        self,
+        backbone,
+        neck=None,
+        bbox_head=None,
+        classifier=None,
+        train_cfg=None,
+        test_cfg=None,
+        pretrained=None,
+        init_cfg=None,
+    ):
         super(SingleStageClsDetector, self).__init__(init_cfg)
         if pretrained:
-            warnings.warn('DeprecationWarning: pretrained is deprecated, '
-                          'please use "init_cfg" instead')
+            warnings.warn(
+                "DeprecationWarning: pretrained is deprecated, "
+                'please use "init_cfg" instead'
+            )
             backbone.pretrained = pretrained
         self.backbone = build_backbone(backbone)
         if neck is not None:
@@ -56,9 +61,11 @@ class SingleStageClsDetector(BaseDetector):
         self.bbox_head = build_head(bbox_head)
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.classifier_input_dim = classifier.get('input_dim', 2048)
+        self.classifier_input_dim = classifier.get("input_dim", 2048)
         self.classifier = nn.Sequential(
-            nn.Conv2d(self.classifier_input_dim, 512, kernel_size=1, padding=1, bias=True),
+            nn.Conv2d(
+                self.classifier_input_dim, 512, kernel_size=1, padding=1, bias=True
+            ),
             nn.ReLU(inplace=False),
             nn.Conv2d(512, 512, kernel_size=3, padding=1, bias=True),
             nn.ReLU(inplace=False),
@@ -74,7 +81,6 @@ class SingleStageClsDetector(BaseDetector):
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Conv2d(512, 3, kernel_size=1, padding=0, bias=True),
         )
-            
 
     def extract_feat(self, img):
         """Directly extract features from the backbone+neck."""
@@ -89,15 +95,15 @@ class SingleStageClsDetector(BaseDetector):
         See `mmdetection/tools/analysis_tools/get_flops.py`
         """
         x = self.extract_feat(img)
-        if self.train_cfg != None and self.train_cfg['stage'] == 'resnet_classify':
+        if self.train_cfg != None and self.train_cfg["stage"] == "resnet_classify":
             self.classifier(x[-1])
         if self.with_neck:
             x = self.neck(x)
         outs = self.bbox_head(x)
         return outs
-    
+
     def visualize(self, x, save_path="tmp.png"):
-        plt.axis('off')
+        plt.axis("off")
         fig = plt.gcf()
         fig.set_size_inches(5.0 / 3, 5.0 / 3)  # dpi = 300, output = 700*700 pixels
         plt.gca().xaxis.set_major_locator(plt.NullLocator())
@@ -105,7 +111,13 @@ class SingleStageClsDetector(BaseDetector):
         plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
         plt.margins(0, 0)
         plt.imshow(pca_vis(x[1]))
-        fig.savefig("{}".format(save_path), format='jpg', transparent=True, dpi=300, pad_inches = 0)
+        fig.savefig(
+            "{}".format(save_path),
+            format="jpg",
+            transparent=True,
+            dpi=300,
+            pad_inches=0,
+        )
         plt.close("all")
 
     def init_visualize(self):
@@ -120,23 +132,23 @@ class SingleStageClsDetector(BaseDetector):
         target_size = (100, 100)
         resized = []
         for xx in x:
-            t = F.interpolate(xx, size=target_size, mode='bilinear', align_corners=False)
+            t = F.interpolate(
+                xx, size=target_size, mode="bilinear", align_corners=False
+            )
             t = pca_vis(t)
             resized.append(t)
         for xx in y:
-            t = F.interpolate(xx, size=target_size, mode='bilinear', align_corners=False)
+            t = F.interpolate(
+                xx, size=target_size, mode="bilinear", align_corners=False
+            )
             t = pca_vis(t)
             resized.append(t)
         resized = np.concatenate(resized, axis=0).reshape(6, 100, 100)
         return resized
 
-    def forward_train(self,
-                      img,
-                      img_metas,
-                      gt_classes,
-                      gt_bboxes,
-                      gt_labels,
-                      gt_bboxes_ignore=None):
+    def forward_train(
+        self, img, img_metas, gt_classes, gt_bboxes, gt_labels, gt_bboxes_ignore=None
+    ):
         """
         Args:
             img (Tensor): Input images of shape (N, C, H, W).
@@ -157,79 +169,106 @@ class SingleStageClsDetector(BaseDetector):
         """
         # super(SingleStageClsDetector, self).forward_train(img, img_metas)
         x = self.extract_feat(img)
-        if self.train_cfg['stage'] == 'resnet_classify' or self.train_cfg['stage'] == 'resnet_finetune':
+        if (
+            self.train_cfg["stage"] == "resnet_classify"
+            or self.train_cfg["stage"] == "resnet_finetune"
+        ):
             img_cls_scores = self.classifier(x[-1])
-            img_cls_loss = F.cross_entropy(img_cls_scores.squeeze(), gt_classes.squeeze(),
-                                            weight=torch.Tensor([1., 1., 4.]).cuda())
-            return {'img_cls_loss': img_cls_loss}
+            img_cls_loss = F.cross_entropy(
+                img_cls_scores.squeeze(),
+                gt_classes.squeeze(),
+                weight=torch.Tensor([1.0, 1.0, 4.0]).cuda(),
+            )
+            return {"img_cls_loss": img_cls_loss}
         if self.with_neck:
             x = self.neck(x)
-        losses = self.bbox_head.forward_train(x, img_metas, gt_bboxes,
-                                              gt_labels, gt_bboxes_ignore)
+        losses = self.bbox_head.forward_train(
+            x, img_metas, gt_bboxes, gt_labels, gt_bboxes_ignore
+        )
         # outs = self.bbox_head(x)
         # loss_inputs = outs + (gt_classes, gt_bboxes, gt_labels, img_metas, self.train_cfg)
         # losses = self.bbox_head.loss(*loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
         return losses
-    
+
     def CAM(self, feats, weight, cls=0, save_prefix=None):
-            # x: N C 7 7
+        # x: N C 7 7
         # weight: C 512
         feat = feats[0]
         weight = weight[cls, :].view(-1, 1, 1)
         att = feat * weight
-        att = att.sum(dim=0).data.cpu().numpy()  # w' * x
-        att = (att - att.min()) / (att.max() - att.min() + 1e-15)
+        att = att.sum(dim=0)
+        att = F.relu(att)
+        att = att.data.cpu().numpy()  # w' * x
+        if att.max() > 1e-9:
+            att = (att - att.min()) / (att.max() - att.min())
         att = cv2.resize(att, (512, 512))
-
 
         print("save_prefix", save_prefix)
         if save_prefix is not None:
-            plt.axis('off')
+            plt.axis("off")
             fig = plt.gcf()
-            fig.set_size_inches(5.0 / 3, 5.0 / 3)  # dpi = 300, output = 700*700 pixels
+            fig.set_size_inches(
+                5.12 / 3, 5.12 / 3
+            )  # dpi = 300, output = 700*700 pixels
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
             plt.margins(0, 0)
-            plt.imshow(att)
-            fig.savefig("{}".format(save_prefix), format='jpg', transparent=True, dpi=300, pad_inches=0)
-            plt.close('all')
+            plt.imshow(att, cmap="jet")
+            fig.savefig(
+                "{}".format(save_prefix),
+                format="jpg",
+                transparent=True,
+                dpi=300,
+                pad_inches=0,
+            )
+            plt.close("all")
         return att
 
     def classify(self, img, cls=0, img_meta=None):
         x = self.extract_feat(img)
         if img_meta is not None:
             import os
-            save_prefix = "cam_vis/{}".format(os.path.basename(img_meta[0]['filename'][:-4]+"_vis.jpg"))
+
+            save_prefix = "cam_vis/{}".format(
+                os.path.basename(img_meta[0]["filename"][:-4] + "_vis.jpg")
+            )
             if not os.path.exists("cam_vis"):
                 os.makedirs("cam_vis")
         else:
             save_prefix = None
         softmax = nn.Softmax(dim=1)
-        if "resnet" not in self.test_cfg['stage']:
+        if "resnet" not in self.test_cfg["stage"]:
             img_cls_scores = softmax(self.bbox_head.classifier(x[1]))
             m = self.bbox_head.classifier[0](x[1])
             for module in self.bbox_head.classifier[1:-2]:
                 m = module(m)
-            att = self.CAM(m, self.bbox_head.classifier[-1].weight, cls=cls, save_prefix=save_prefix)
+            att = self.CAM(
+                m,
+                self.bbox_head.classifier[-1].weight,
+                cls=cls,
+                save_prefix=save_prefix,
+            )
         else:
             img_cls_scores = softmax(self.classifier(x[-1]))
             m = self.classifier[0](x[-1])
             for module in self.classifier[1:-2]:
                 m = module(m)
-            att = self.CAM(m, self.classifier[-1].weight, cls=cls, save_prefix=save_prefix)
+            att = self.CAM(
+                m, self.classifier[-1].weight, cls=cls, save_prefix=save_prefix
+            )
         return att, img_cls_scores
 
     def big_plot(self, *args):
         for i in range(len(args)):
-            plt.subplot(1, len(args), i+1)
+            plt.subplot(1, len(args), i + 1)
             plt.imshow(args[i], cmap=plt.cm.jet)
         plt.show()
-        mmm=1
+        mmm = 1
 
     @staticmethod
     def plot_composite(img, att):
-        plt.imshow(img.detach().cpu().squeeze().numpy().transpose(1,2,0))
+        plt.imshow(img.detach().cpu().squeeze().numpy().transpose(1, 2, 0))
         plt.imshow(att, alpha=0.5, cmap=plt.cm.jet)
         plt.show()
 
@@ -242,11 +281,11 @@ class SingleStageClsDetector(BaseDetector):
         img_cls_scores = softmax(self.classifier1(x[-1]))
         gt_classes = torch.FloatTensor(1, 3).zero_().cuda()
         gt_classes.requires_grad = True
-        if 'h' in os.path.basename(img_meta[0]['filename']):
+        if "h" in os.path.basename(img_meta[0]["filename"]):
             gt_classes[0][0] = 1 + gt_classes[0][0]
-        elif 's' in os.path.basename(img_meta[0]['filename']):
+        elif "s" in os.path.basename(img_meta[0]["filename"]):
             gt_classes[0][1] = 1 + gt_classes[0][1]
-        elif 'tb' in os.path.basename(img_meta[0]['filename']):
+        elif "tb" in os.path.basename(img_meta[0]["filename"]):
             gt_classes[0][2] = 1 + gt_classes[0][2]
         img_cls_scores = img_cls_scores.squeeze()
         gt_classes = gt_classes.squeeze()
@@ -258,12 +297,12 @@ class SingleStageClsDetector(BaseDetector):
 
         att = att.squeeze().detach().cpu().numpy()
 
-        #plt.imshow(img)
+        # plt.imshow(img)
         plt.imshow(att, cmap=plt.cm.jet)
-        #loss = (gt_classes * img_cls_scores.squeeze(dim=2).squeeze(dim=2)).sum()
-        #loss = img_cls_scores.mean()
+        # loss = (gt_classes * img_cls_scores.squeeze(dim=2).squeeze(dim=2)).sum()
+        # loss = img_cls_scores.mean()
 
-        #loss.backward(retain_graph=True)
+        # loss.backward(retain_graph=True)
         self.backbone.clean_grad()
         return
 
@@ -282,49 +321,54 @@ class SingleStageClsDetector(BaseDetector):
                 corresponds to each class.
         """
         enable_layercam = False
-        enable_cam = False
+        enable_cam = True
         enable_pca = False
         if enable_layercam:
             self.pre_layercam(img, img_metas)
-        
+
         feat = self.extract_feat(img)
 
         if enable_cam:
             img_for_show = (img - img.min()) / (img.max() - img.min())
-            if "h" in img_metas[0]['filename']:
-                #att_error, img_cls_scores_error = self.classify(error_area, cls=1)
+            # cls=1 means sick but not tb which is what we want to see
+            # att, img_cls_scores = self.classify(img, cls=1, img_meta=img_metas)
+            print(img_metas[0]["filename"])
+            if "h" in img_metas[0]["filename"]:
+                # att_error, img_cls_scores_error = self.classify(error_area, cls=1)
                 att, img_cls_scores = self.classify(img, cls=0, img_meta=img_metas)
 
-                #self.plot_composite(img_for_show, att)
-            if "s" in img_metas[0]['filename']:
-                #att_error, img_cls_scores_error = self.classify(error_area, cls=1)
+                # self.plot_composite(img_for_show, att)
+            if "s" in img_metas[0]["filename"]:
+                # att_error, img_cls_scores_error = self.classify(error_area, cls=1)
                 att, img_cls_scores = self.classify(img, cls=1, img_meta=img_metas)
 
-                #self.plot_composite(img_for_show, att)
-                #att_minus, img_cls_scores_minus = self.classify(img_, cls=1)
-                #att_none, img_cls_scores_none = self.classify(torch.zeros(1, 3, 512, 512).cuda(), cls=1)
+                # self.plot_composite(img_for_show, att)
+                # att_minus, img_cls_scores_minus = self.classify(img_, cls=1)
+                # att_none, img_cls_scores_none = self.classify(torch.zeros(1, 3, 512, 512).cuda(), cls=1)
 
-                #self.big_plot(att, att_minus, att_error, att_none)
-            if "t" in os.path.basename(img_metas[0]['filename']):
+                # self.big_plot(att, att_minus, att_error, att_none)
+            if "t" in os.path.basename(img_metas[0]["filename"]):
                 print("detect a tb image")
-                #att_error, img_cls_scores_error = self.classify(error_area, cls=2)
+                # att_error, img_cls_scores_error = self.classify(error_area, cls=2)
                 att, img_cls_scores = self.classify(img, cls=2, img_meta=img_metas)
-                #self.plot_composite(img_for_show, att)
-                #att_minus, img_cls_scores_minus = self.classify(img_, cls=2)
-                #att_none, img_cls_scores_none = self.classify(torch.zeros(1, 3, 512, 512).cuda(), cls=2)
-                #self.big_plot(att, att_minus, att_error, att_none)
+                # self.plot_composite(img_for_show, att)
+                # att_minus, img_cls_scores_minus = self.classify(img_, cls=2)
+                # att_none, img_cls_scores_none = self.classify(torch.zeros(1, 3, 512, 512).cuda(), cls=2)
+                # self.big_plot(att, att_minus, att_error, att_none)
 
         img_cls_scores = self.classifier(feat[-1])
-        name = os.path.basename(img_metas[0]['filename'])
-        
+        name = os.path.basename(img_metas[0]["filename"])
+
         if self.with_neck:
             feat = self.neck(feat)
         if enable_pca:
-            self.visualize(feat, save_path=\
-                           "/media/wyh/yuhuan/zsc/mmdetection/mmdetection/vis/pca_vis/{}".\
-                            format(name[:-4]+'_vis.jpg'))
-        results_list = self.bbox_head.simple_test(
-            feat, img_metas, rescale=rescale)
+            self.visualize(
+                feat,
+                save_path="/media/wyh/yuhuan/zsc/mmdetection/mmdetection/vis/pca_vis/{}".format(
+                    name[:-4] + "_vis.jpg"
+                ),
+            )
+        results_list = self.bbox_head.simple_test(feat, img_metas, rescale=rescale)
         bbox_results = [
             bbox2result(det_bboxes, det_labels, self.bbox_head.num_classes)
             for det_bboxes, det_labels in results_list
@@ -350,15 +394,15 @@ class SingleStageClsDetector(BaseDetector):
                 The outer list corresponds to each image. The inner list
                 corresponds to each class.
         """
-        assert hasattr(self.bbox_head, 'aug_test'), \
-            f'{self.bbox_head.__class__.__name__}' \
-            ' does not support test-time augmentation'
+        assert hasattr(self.bbox_head, "aug_test"), (
+            f"{self.bbox_head.__class__.__name__}"
+            " does not support test-time augmentation"
+        )
 
         feats = self.extract_feats(imgs)
         if self.with_neck:
             feats = [self.neck(i) for i in feats]
-        results_list = self.bbox_head.aug_test(
-            feats, img_metas, rescale=rescale)
+        results_list = self.bbox_head.aug_test(feats, img_metas, rescale=rescale)
         bbox_results = [
             bbox2result(det_bboxes, det_labels, self.bbox_head.num_classes)
             for det_bboxes, det_labels in results_list
@@ -384,11 +428,11 @@ class SingleStageClsDetector(BaseDetector):
 
         # get shape as tensor
         img_shape = torch._shape_as_tensor(img)[2:]
-        img_metas[0]['img_shape_for_onnx'] = img_shape
+        img_metas[0]["img_shape_for_onnx"] = img_shape
         # get pad input shape to support onnx dynamic shape for exporting
         # `CornerNet` and `CentripetalNet`, which 'pad_shape' is used
         # for inference
-        img_metas[0]['pad_shape_for_onnx'] = img_shape
+        img_metas[0]["pad_shape_for_onnx"] = img_shape
         # TODO:move all onnx related code in bbox_head to onnx_export function
         det_bboxes, det_labels = self.bbox_head.get_bboxes(*outs, img_metas)
 

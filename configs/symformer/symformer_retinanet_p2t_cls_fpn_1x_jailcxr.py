@@ -1,5 +1,5 @@
 model = dict(
-    type="RetinaNet",
+    type="RetinaNetClsAtt",
     backbone=dict(
         type="p2t_small",
         depth=50,
@@ -67,6 +67,7 @@ model = dict(
         ),
         loss_bbox=dict(type="L1Loss", loss_weight=1.0),
     ),
+    classifier=dict(input_dim=512),
     train_cfg=dict(
         assigner=dict(
             type="MaxIoUAssigner",
@@ -78,6 +79,7 @@ model = dict(
         allowed_border=-1,
         pos_weight=-1,
         debug=False,
+        stage="resnet_classify",
     ),
     test_cfg=dict(
         nms_pre=1000,
@@ -85,11 +87,12 @@ model = dict(
         score_thr=0.05,
         nms=dict(type="nms", iou_threshold=0.5),
         max_per_img=100,
+        stage="resnet_classify",
     ),
 )
 
 dataset_type = "COCODataset"
-data_root = "/home/colwzq/data/medical_datasets/TBX11K/"
+data_root = "/home/colwzq/data/jail_cxr/"
 classes = ("ActiveTuberculosis", "ObsoletePulmonaryTuberculosis")
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True
@@ -103,7 +106,7 @@ train_pipeline = [
     dict(type="Normalize", **img_norm_cfg),
     dict(type="Pad", size_divisor=32),
     dict(type="DefaultFormatBundle"),
-    dict(type="Collect", keys=["img", "gt_bboxes", "gt_labels"]),
+    dict(type="Collect", keys=["img", "gt_classes", "gt_bboxes", "gt_labels"]),
 ]
 test_pipeline = [
     dict(type="LoadImageFromFile"),
@@ -122,32 +125,40 @@ test_pipeline = [
     ),
 ]
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=16,
     workers_per_gpu=4,
     train=dict(
         type="CocoDataset",
-        ann_file="/home/colwzq/data/medical_datasets/TBX11K/annotations/json/TBX11K_trainval_only_tb.json",
-        img_prefix="/home/colwzq/data/medical_datasets/TBX11K/imgs/",
+        ann_file="/home/colwzq/data/jail_cxr/annotations/json/all_trainval.json",
+        img_prefix="/home/colwzq/data/jail_cxr/imgs/",
         pipeline=train_pipeline,
-        filter_empty_gt=True,
+        filter_empty_gt=False,
+        classes=("ActiveTuberculosis", "ObsoletePulmonaryTuberculosis"),
+    ),
+    test=dict(
+        type="CocoDataset",
+        ann_file="/home/colwzq/data/jail_cxr/annotations/json/jail_cxr_test.json",
+        img_prefix="/home/colwzq/data/jail_cxr/imgs/",
+        pipeline=test_pipeline,
         classes=("ActiveTuberculosis", "ObsoletePulmonaryTuberculosis"),
     ),
 )
-evaluation = dict(interval=2, metric="bbox")
-optimizer = dict(type="AdamW", lr=0.00005, weight_decay=0.0001)
+evaluation = dict(interval=30, metric="bbox")
+optimizer = dict(
+    type="SGD", lr=0.001, momentum=0.9, weight_decay=0.0001, stage="resnet_finetune"
+)
 optimizer_config = dict(grad_clip=None)
 lr_config = dict(
-    policy="step", warmup="linear", warmup_iters=500, warmup_ratio=0.001, step=[16, 22]
+    policy="step", warmup="linear", warmup_iters=500, warmup_ratio=0.001, step=[8, 11]
 )
-# step=[8, 11])
-runner = dict(type="EpochBasedRunner", max_epochs=24)
-checkpoint_config = dict(interval=24)
-log_config = dict(interval=50, hooks=[dict(type="TextLoggerHook")])
+runner = dict(type="EpochBasedRunner", max_epochs=12)
+checkpoint_config = dict(interval=6)
+log_config = dict(interval=150, hooks=[dict(type="TextLoggerHook")])
 custom_hooks = [dict(type="NumClassCheckHook")]
 dist_params = dict(backend="nccl")
 log_level = "INFO"
-load_from = None
+load_from = "work_dirs/symformer_retinanet_p2t/latest.pth"
 resume_from = None
 workflow = [("train", 1)]
 gpu_ids = range(0, 2)
-find_unused_parameters = False
+find_unused_parameters = True
